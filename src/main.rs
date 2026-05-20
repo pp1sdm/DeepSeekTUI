@@ -2,6 +2,9 @@ use serde_json;
 
 mod llm;
 
+mod message;
+mod session;
+
 #[tokio::main]
 async fn main() {
     let res = llm::chat("你的名字是什么").await;
