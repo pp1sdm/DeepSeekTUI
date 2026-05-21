@@ -3,8 +3,9 @@ use serde_json::json;
 use std::{ env, time::Duration };
 use dotenvy::dotenv;
 use anyhow::{Result, anyhow};
+use super::message::Message;
 
-pub async fn chat(prompt: &str) -> Result<serde_json::Value> {
+pub async fn chat(messages: &[Message]) -> Result<serde_json::Value> {
     // 加载环境变量
     dotenv().ok();
     
@@ -20,12 +21,7 @@ pub async fn chat(prompt: &str) -> Result<serde_json::Value> {
         .header("Authorization", format!("Bearer {}", api_key))
         .json(&json!({
             "model": "deepseek-v4-flash",
-            "messages": [
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ]
+            "messages": messages
         }))
         .send()
         .await?;

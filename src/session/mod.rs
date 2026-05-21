@@ -1,39 +1,47 @@
+pub mod message;
+
+use message::Message;
 use serde::{Serialize, Deserialize};
-use chrono::Local;
+use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::message::Message;
-
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Session {
     pub id: String,
-
-    // 对话历史
     pub messages: Vec<Message>,
-
-    // 元信息
-    pub title: Option<String>,
     pub created_at: u64,
     pub updated_at: u64,
+}
 
-    // 可选：状态
-    pub is_streaming: bool,
-
-    // 可选：模型配置
-    pub model: String,
-    pub temperature: f32,
+fn now() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
 }
 
 impl Session {
-    pub fn new(id: String, model: String) -> Self {
+    pub fn new() -> Self {
+        let now = now();
+
         Self {
-            id,
+            id: uuid::Uuid::new_v4().to_string(),
             messages: vec![],
-            title: None,
-            created_at: Local::now().timestamp_millis() as u64,
-            updated_at: Local::now().timestamp_millis() as u64,
-            is_streaming: false,
-            model,
-            temperature: 0.6,
+            created_at: now,
+            updated_at: now,
         }
+    }
+
+    pub fn add_message(&mut self, msg: Message) {
+        self.messages.push(msg);
+        self.updated_at = now();
+    }
+
+    pub fn clear(&mut self) {
+        self.messages.clear();
+        self.updated_at = now();
+    }
+
+    pub fn last_message(&self) -> Option<&Message> {
+        self.messages.last()
     }
 }
