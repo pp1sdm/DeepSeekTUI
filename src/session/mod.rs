@@ -1,6 +1,6 @@
 pub mod message;
 
-use message::Message;
+use self::message::Message;
 use serde::{Serialize, Deserialize};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -31,8 +31,25 @@ impl Session {
         }
     }
 
-    pub fn add_message(&mut self, msg: Message) {
-        self.messages.push(msg);
+    pub fn add_user_message(&mut self, msg: String) {
+        // 实现message类型
+        self.messages.push(
+            Message::user(msg)
+        );
+        self.updated_at = now();
+    }
+
+    pub fn add_assistant_message(&mut self, msg: String) {
+        self.messages.push(
+            Message::assistant(msg)
+        );
+        self.updated_at = now();
+    }
+
+    pub fn add_system_message(&mut self, msg: String) {
+        self.messages.push(
+            Message::system(msg)
+        );
         self.updated_at = now();
     }
 
