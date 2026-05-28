@@ -1,16 +1,12 @@
 use reqwest::Client;
 use serde_json::json;
-use std::{ env, time::Duration };
-use dotenvy::dotenv;
+use std::env;
+use std::time::Duration;
 use anyhow::{Result, anyhow};
 use super::session::message::Message;
 
 pub async fn chat(messages: &[Message]) -> Result<String> {
-    // 加载环境变量
-    dotenv().ok();
-
-    // 获取环境变量
-    let api_key = env::var("DEEPSEEK_KEY")?;
+    let api_key = env::var("DEEPSEEK_KEY").map_err(|_| anyhow!("未设置 DEEPSEEK_KEY 环境变量，请在 .env 文件中配置"))?;
 
     // 自定义客户端
     let client = Client::builder().timeout(Duration::from_secs(60)).build()?;
@@ -20,7 +16,7 @@ pub async fn chat(messages: &[Message]) -> Result<String> {
         .post("https://api.deepseek.com/v1/chat/completions")
         .header("Authorization", format!("Bearer {}", api_key))
         .json(&json!({
-            "model": "deepseek-v4-flash",
+            "model": "deepseek-chat",
             "messages": messages
         }))
         .send()
@@ -35,7 +31,7 @@ pub async fn chat(messages: &[Message]) -> Result<String> {
     if !status.is_success() {
         return Err(
             anyhow!(
-                "HTTP {}: {}",
+                "API 请求失败 (HTTP {}): {}",
                 status,
                 text
             )
@@ -43,13 +39,13 @@ pub async fn chat(messages: &[Message]) -> Result<String> {
     }
 
     let json: serde_json::Value =
-        serde_json::from_str(&text)?;
+        serde_json::from_str(&text).map_err(|_| anyhow!("API 响应 JSON 解析失败: {}", text))?;
 
     let content = json["choices"][0]
         ["message"]["content"]
         .as_str()
         .ok_or_else(|| {
-            anyhow!("响应格式错误")
+            anyhow!("API 响应格式异常，无法提取回复内容")
         })?;
 
     Ok(content.to_string())

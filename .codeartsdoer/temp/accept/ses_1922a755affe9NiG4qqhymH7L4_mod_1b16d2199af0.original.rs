@@ -5,26 +5,19 @@ use ratatui::{
 
 use crate::app::{App, Focus};
 
-// 唯一入口，根据app的状态绘制
 pub fn draw(f: &mut Frame, app: &mut App) {
-    // 框架的区域
     let main_area = f.area();
 
-    // 上下分割
     let vertical_layout =
         Layout::vertical([Constraint::Min(1), Constraint::Length(6)]).split(main_area);
 
-    // 将分割给到两个区域
     render_session_list(f, app, vertical_layout[0]);
     render_input(f, app, vertical_layout[1]);
 }
 
-// 渲染会话列表
 fn render_session_list(f: &mut Frame, app: &mut App, area: Rect) {
-    // 判断当前的焦点位置
     let is_focused = matches!(app.focus, Focus::SessionList);
 
-    // 当前的块
     let block = Block::new()
         .title("会话列表")
         .borders(Borders::ALL)
@@ -34,47 +27,62 @@ fn render_session_list(f: &mut Frame, app: &mut App, area: Rect) {
             Style::new()
         });
 
-    // 渲染元素
-    let items: Vec<ListItem> = app
+    let mut items: Vec<ListItem> = app
         .session
         .messages
         .iter()
         .map(|m| {
-            let prefix = match m.role.as_str() {
-                "user" => "👤 ",
-                "assistant" => "🤖 ",
-                _ => "",
+            let (prefix, style) = match m.role.as_str() {
+                "user" => ("👤 ", Style::new()),
+                "assistant" => {
+                    if m.content.starts_with("[错误]") {
+                        ("🤖 ", Style::new().fg(Color::Red))
+                    } else {
+                        ("🤖 ", Style::new())
+                    }
+                }
+                _ => ("", Style::new()),
             };
 
-            ListItem::new(format!(
-                "{}{}",
-                prefix,
-                m.content
-            ))
+            ListItem::new(Line::from(vec![
+                Span::styled(prefix, style),
+                Span::styled(m.content.clone(), style),
+            ]))
         })
         .collect();
 
-    // 创建当前渲染列表
+    if app.is_loading {
+        items.push(ListItem::new(
+            Line::from(Span::styled("🤖 思考中...", Style::new().fg(Color::Cyan)))
+        ));
+    }
+
     let list = List::new(items).block(block);
 
-    // 框架渲染组件
     f.render_widget(list, area);
 }
 
-// 渲染输入框
 fn render_input(f: &mut Frame, app: &mut App, area: Rect) {
-    // 判断当前的焦点位置
     let is_focused = matches!(app.focus, Focus::Input);
 
-    // 当前块
+    let title = if app.is_loading {
+        " 输入框 (等待回复中...) "
+    } else {
+        " 输入框 "
+    };
+
+    let border_color = if app.is_loading {
+        Color::DarkGray
+    } else if is_focused {
+        Color::Green
+    } else {
+        Color::DarkGray
+    };
+
     let block = Block::new()
-        .title(" 输入框 ")
+        .title(title)
         .borders(Borders::ALL)
-        .border_style(if is_focused {
-            Style::new().fg(Color::Green)
-        } else {
-            Style::new().fg(Color::DarkGray)
-        });
+        .border_style(Style::new().fg(border_color));
 
     let inner = block.inner(area);
     f.render_widget(block, area);

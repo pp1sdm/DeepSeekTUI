@@ -8,19 +8,23 @@ mod debug;
 
 use crossterm::event::{self, Event, KeyEventKind};
 use std::time::Duration;
+use dotenvy::dotenv;
+use tokio::sync::mpsc;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // debug部分
-    let _log_guard = debug::init_log();
+    dotenv().ok();
 
-    // 创建终端
+    debug::init_log();
+
     let mut terminal = ratatui::init();
 
-    // 创建应用实例
-    let mut app = app::App::new();
+    let (api_sender, mut api_receiver) = mpsc::unbounded_channel::<app::ApiResult>();
 
-    let result = run(&mut terminal, &mut app).await;
+    let mut app = app::App::new();
+    app.set_sender(api_sender);
+
+    let result = run(&mut terminal, &mut app, &mut api_receiver).await;
 
     ratatui::restore();
 
@@ -30,6 +34,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 async fn run<B>(
     terminal: &mut ratatui::Terminal<B>,
     app: &mut app::App,
+    api_receiver: &mut mpsc::UnboundedReceiver<app::ApiResult>,
 ) -> Result<(), Box<dyn std::error::Error>>
 where
     B: ratatui::backend::Backend,
@@ -38,12 +43,15 @@ where
     while !app.should_quit {
         terminal.draw(|frame| ui::draw(frame, app))?;
 
+        while let Ok(result) = api_receiver.try_recv() {
+            app.handle_api_result(result);
+        }
+
         if event::poll(Duration::from_millis(100))? {
             if let Event::Key(key) = event::read()? {
                 if key.kind == KeyEventKind::Press {
                     if let Some(action) = app.handle_key(key) {
-                        tracing::info!("这里是main函数的执行app之前");
-                        app.apply_action(action).await;
+                        app.apply_action(action);
                     }
                 }
             }

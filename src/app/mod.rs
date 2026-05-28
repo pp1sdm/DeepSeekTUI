@@ -1,6 +1,6 @@
 use super::session::Session;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use ratatui_textarea::{TextArea, WrapMode, Input};
+use ratatui_textarea::TextArea;
 use super::agent;
 
 // 当前焦点区域
@@ -10,7 +10,7 @@ pub enum Focus {
 }
 
 // 业务枚举，将原始按键翻译成在这个app中有意义的动作
-enum Action {
+pub enum Action {
     Quit,
     SwitchFocus,
     SendMessage,
@@ -32,9 +32,6 @@ impl App {
         let mut textarea = TextArea::new(vec![]);
         textarea.set_placeholder_text(
             "在这里开始..."
-        );
-        textarea.set_wrap_mode(
-            WrapMode::WordOrGlyph
         );
 
         App {
@@ -71,13 +68,15 @@ impl App {
 
     // 焦点在输入框的时候
     pub fn handle_input_key(&mut self, key: KeyEvent) -> Option<Action> {
-        // 在输入框的按键捕获
-        // enter + ctrl 提交消息
-        if key.code == KeyCode::Enter && key.modifiers.contains(KeyModifiers::CONTROL) {
+        // 输入框的按键捕获
+        // 同时匹配 Ctrl+Enter (某些终端) 和 Ctrl+j (Ctrl+Enter 的常见别名)
+        let is_ctrl_enter = (key.code == KeyCode::Enter || key.code == KeyCode::Char('j'))
+            && key.modifiers.contains(KeyModifiers::CONTROL);
+
+        if is_ctrl_enter {
             return Some(Action::SendMessage);
         };
 
-        // 其余按键给到textarea处理
         self.textarea.input(key);
         None
     }
@@ -99,6 +98,7 @@ impl App {
 
     // 执行预设的业务，切换app状态
     pub async fn apply_action(&mut self, action: Action) {
+        tracing::info!("这里是app函数");
         match action {
             Action::Quit => self.should_quit = true,
             Action::SwitchFocus => {
@@ -108,20 +108,23 @@ impl App {
                 }
             },
             Action::SendMessage => {
+                tracing::info!("这里是调用deepseek之前");
                 // 获取输入框的文本
                 let text = self.textarea.lines().join("\n");
 
                 // 将信息给到会话，用用户的身份
                 self.session.add_user_message(text);
 
+
                 // 调用智能体
                 let res = self.agent.run(&self.session.messages.as_slice()).await.unwrap();
+                tracing::info!("这里是调用deepseek之后");
 
                 // 将信息给到会话，用智能体的身份
                 self.session.add_assistant_message(res);
 
                 // 清空输入框
-                self.textarea.clear();
+                self.textarea = TextArea::new(vec![]);
             },
         }
     }

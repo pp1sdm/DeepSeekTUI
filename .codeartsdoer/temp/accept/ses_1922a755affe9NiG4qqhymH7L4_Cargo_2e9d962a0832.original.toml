@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 tokio = { version = "1", features = ["full"] }
-reqwest = { version = "0.13.3", features = ["json"] }
+reqwest = { version = "0.13.3", features = ["json", "rustls"] }
 serde_json = "1.0.148"
 dotenvy = "0.15"
 anyhow = "1.0.102"
@@ -16,4 +16,3 @@ ratatui-textarea = "0.8"
 crossterm = "0.29"
 tracing = "0.1"
 tracing-subscriber = "0.3"
-tracing-appender = "0.2"
