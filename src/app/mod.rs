@@ -2,6 +2,7 @@ use super::session::Session;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui_textarea::TextArea;
 use super::agent;
+use futures::{StreamExt, stream::BoxStream};
 
 // 当前焦点区域
 pub enum Focus {
@@ -24,6 +25,9 @@ pub struct App {
     // app的业务状态
     pub session: Session,
     pub agent: agent::Agent,
+
+    // 流式状态
+    pub stream: Option<BoxStream<'static, anyhow::Result<String>>>,
 }
 
 // 挂载
@@ -40,6 +44,7 @@ impl App {
             should_quit: false,
             session: Session::new(),
             agent: agent::Agent,
+            stream: None,
         }
     }
 
@@ -96,9 +101,31 @@ impl App {
         }
     }
 
+    // 流式添加数据
+    pub async fn poll_stream(&mut self) {
+        let stream = match &mut self.stream {
+            Some(s) => s,
+            None => return,
+        };
+
+        match stream.next().await {
+            Some(Ok(chunk)) => {
+                self.session.append_to_last(&chunk);
+            }
+            Some(Err(e)) => {
+                self.session.append_to_last(&format!("\n[错误: {}]", e));
+                self.stream = None;
+                self.session.finish();
+            }
+            None => {
+                self.stream = None;
+                self.session.finish();
+            }
+        }
+    }
+
     // 执行预设的业务，切换app状态
     pub async fn apply_action(&mut self, action: Action) {
-        tracing::info!("这里是app函数");
         match action {
             Action::Quit => self.should_quit = true,
             Action::SwitchFocus => {
@@ -108,24 +135,32 @@ impl App {
                 }
             },
             Action::SendMessage => {
-                tracing::info!("这里是调用deepseek之前");
-                // 获取输入框的文本
                 let text = self.textarea.lines().join("\n");
+                if text.trim().is_empty() {
+                    return;
+                }
 
-                // 将信息给到会话，用用户的身份
-                self.session.add_user_message(text);
+                // user消息：start → append → finish
+                self.session.start_user();
+                self.session.append_to_last(&text);
+                self.session.finish();
 
+                // assistant消息：start → append → finish
+                match self.agent.run(&self.session.messages).await {
+                    Ok(stream) => {
+                        self.stream = Some(stream);
+                        self.session.start_assistant();
+                    }
+                    Err(e) => {
+                        self.session.start_assistant();
+                        self.session.append_to_last(&format!("请求失败: {}", e));
+                        self.session.finish();
+                    }
+                }
 
-                // 调用智能体
-                let res = self.agent.run(&self.session.messages.as_slice()).await.unwrap();
-                tracing::info!("这里是调用deepseek之后");
-
-                // 将信息给到会话，用智能体的身份
-                self.session.add_assistant_message(res);
-
-                // 清空输入框
                 self.textarea = TextArea::new(vec![]);
-            },
+                self.textarea.set_placeholder_text("在这里开始...");
+            }
         }
     }
 }

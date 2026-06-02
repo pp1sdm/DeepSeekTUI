@@ -36,18 +36,24 @@ where
     B::Error: 'static,
 {
     while !app.should_quit {
+        // 绘制ui帧
         terminal.draw(|frame| ui::draw(frame, app))?;
 
-        if event::poll(Duration::from_millis(100))? {
+
+
+        // 处理按键 - 阻塞线程，等待按键输入的同时还是动画帧绘制
+        if event::poll(Duration::from_millis(50))? {
             if let Event::Key(key) = event::read()? {
                 if key.kind == KeyEventKind::Press {
                     if let Some(action) = app.handle_key(key) {
-                        tracing::info!("这里是main函数的执行app之前");
                         app.apply_action(action).await;
                     }
                 }
             }
         }
+
+        // 每轮都尝试拉取流数据
+        app.poll_stream().await;
     }
 
     Ok(())

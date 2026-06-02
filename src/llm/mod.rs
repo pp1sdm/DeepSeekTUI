@@ -3,9 +3,11 @@ use serde_json::json;
 use std::{ env, time::Duration };
 use dotenvy::dotenv;
 use anyhow::{Result, anyhow};
+use futures::{StreamExt, stream::BoxStream};
+use eventsource_stream::Eventsource;
 use super::session::message::Message;
 
-pub async fn chat(messages: &[Message]) -> Result<String> {
+pub async fn chat(messages: &[Message]) -> Result<BoxStream<'static, Result<String>>> {
     // 加载环境变量
     dotenv().ok();
 
@@ -21,36 +23,40 @@ pub async fn chat(messages: &[Message]) -> Result<String> {
         .header("Authorization", format!("Bearer {}", api_key))
         .json(&json!({
             "model": "deepseek-v4-flash",
-            "messages": messages
+            "messages": messages,
+            "stream": true
         }))
         .send()
         .await?;
 
-    // 返回的状态
+    // 先保存状态码（StatusCode 是 Copy 的，不消耗 res）
     let status = res.status();
 
-     // 解析结果
-    let text = res.text().await?;
-
     if !status.is_success() {
-        return Err(
-            anyhow!(
-                "HTTP {}: {}",
-                status,
-                text
-            )
-        );
+        let text = res.text().await?;  // 现在 res 在这里才被消耗
+        return Err(anyhow!("HTTP {}: {}", status, text));
     }
 
-    let json: serde_json::Value =
-        serde_json::from_str(&text)?;
+     // 解析结果
+    let stream = res
+        .bytes_stream()
+        .eventsource()
+        .map(|event| -> Result<String> {
+            let event = event.map_err(|e| anyhow!("SSE 错误: {}", e))?;
+            let data = event.data;
 
-    let content = json["choices"][0]
-        ["message"]["content"]
-        .as_str()
-        .ok_or_else(|| {
-            anyhow!("响应格式错误")
-        })?;
+            if data.trim() == "[DONE]" {
+                return Ok(String::new());
+            }
 
-    Ok(content.to_string())
+            let json: serde_json::Value = serde_json::from_str(&data)?;
+            let content = json["choices"][0]["delta"]["content"]
+                .as_str()
+                .unwrap_or("");
+
+            Ok(content.to_string())
+        })
+        .boxed();
+
+    Ok(stream)
 }

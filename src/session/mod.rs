@@ -22,7 +22,6 @@ fn now() -> u64 {
 impl Session {
     pub fn new() -> Self {
         let now = now();
-
         Self {
             id: uuid::Uuid::new_v4().to_string(),
             messages: vec![],
@@ -31,27 +30,33 @@ impl Session {
         }
     }
 
-    pub fn add_user_message(&mut self, msg: String) {
-        // 实现message类型
-        self.messages.push(
-            Message::user(msg)
-        );
+    // 流式的起点，空字符串实现占位
+    pub fn start_user(&mut self) {
+        self.messages.push(Message::user(String::new()));
+    }
+
+    pub fn start_assistant(&mut self) {
+        self.messages.push(Message::assistant(String::new()));
+    }
+
+    pub fn start_system(&mut self) {
+        self.messages.push(Message::system(String::new()));
+    }
+
+    //向流式的信息中添加数据
+    pub fn append_to_last(&mut self, chunk: &str) {
+        if let Some(last) = self.messages.last_mut() {
+            last.content.push_str(chunk);
+        }
+    }
+
+    // 收尾，补充完整的message信息的时间戳
+
+    pub fn finish(&mut self) {
         self.updated_at = now();
     }
 
-    pub fn add_assistant_message(&mut self, msg: String) {
-        self.messages.push(
-            Message::assistant(msg)
-        );
-        self.updated_at = now();
-    }
-
-    pub fn add_system_message(&mut self, msg: String) {
-        self.messages.push(
-            Message::system(msg)
-        );
-        self.updated_at = now();
-    }
+    // 辅助方法
 
     pub fn clear(&mut self) {
         self.messages.clear();
