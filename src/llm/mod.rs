@@ -29,11 +29,11 @@ pub async fn chat(messages: &[Message]) -> Result<BoxStream<'static, Result<Stri
         .send()
         .await?;
 
-    // 先保存状态码（StatusCode 是 Copy 的，不消耗 res）
+    // 先保存状态码
     let status = res.status();
 
     if !status.is_success() {
-        let text = res.text().await?;  // 现在 res 在这里才被消耗
+        let text = res.text().await?;
         return Err(anyhow!("HTTP {}: {}", status, text));
     }
 

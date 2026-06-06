@@ -3,18 +3,27 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui_textarea::TextArea;
 use super::agent;
 use futures::{StreamExt, stream::BoxStream};
+use super::display::{oscilloscope::Oscilloscope, spectroscope::Spectroscope, vectorscope::Vectorscope, GraphConfig};
+use super::input::Matrix;
 
 // 当前焦点区域
 pub enum Focus {
     SessionList,
     Input,
+    Scope,
 }
-
 // 业务枚举，将原始按键翻译成在这个app中有意义的动作
 pub enum Action {
     Quit,
     SwitchFocus,
     SendMessage,
+}
+
+// 示波器状态枚举
+pub enum CurrentDisplayMode {
+    Oscilloscope,
+    Vectorscope,
+    Spectroscope,
 }
 pub struct App {
     // app的基本状态
@@ -28,15 +37,54 @@ pub struct App {
 
     // 流式状态
     pub stream: Option<BoxStream<'static, anyhow::Result<String>>>,
+
+    // 示波器状态
+    pub scope_mode: CurrentDisplayMode,
+    pub graph_config: GraphConfig,
+    pub oscilloscope: Oscilloscope,
+    pub spectroscope: Spectroscope,
+    pub vectorscope: Vectorscope,
+    pub scope_paused: bool,
+    pub scope_data: Matrix<f64>,
+    pub scope_tick: u64,
 }
 
 // 挂载
 impl App {
     pub fn new() -> Self {
         let mut textarea = TextArea::new(vec![]);
-        textarea.set_placeholder_text(
-            "在这里开始..."
-        );
+        textarea.set_placeholder_text("在这里开始...");
+
+        let graph_config = GraphConfig {
+            pause: false,
+            samples: 2048,
+            sampling_rate: 48000,
+            scale: 1.0,
+            width: 2048,
+            scatter: false,
+            references: true,
+            show_ui: true,
+            marker_type: ratatui::symbols::Marker::Braille,
+            palette: vec![
+                ratatui::style::Color::Green,
+                ratatui::style::Color::Yellow,
+                ratatui::style::Color::Cyan,
+                ratatui::style::Color::Magenta,
+                ratatui::style::Color::Red,
+            ],
+            labels_color: ratatui::style::Color::White,
+            axis_color: ratatui::style::Color::DarkGray,
+        };
+
+        let spectroscope = Spectroscope {
+            sampling_rate: 48000,
+            buffer_size: 2048,
+            average: 1,
+            buf: Vec::new(),
+            window: false,
+            log_y: true,
+            phase_diff: false,
+        };
 
         App {
             focus: Focus::Input,
@@ -45,6 +93,14 @@ impl App {
             session: Session::new(),
             agent: agent::Agent,
             stream: None,
+            scope_mode: CurrentDisplayMode::Oscilloscope,
+            graph_config,
+            oscilloscope: Oscilloscope::default(),
+            spectroscope,
+            vectorscope: Vectorscope::default(),
+            scope_paused: false,
+            scope_data: vec![vec![]; 2],
+            scope_tick: 0,
         }
     }
 
@@ -68,6 +124,7 @@ impl App {
         match self.focus {
             Focus::Input => self.handle_input_key(key),
             Focus::SessionList => self.handle_session_key(key),
+            _ => None,
         }
     }
 
@@ -124,6 +181,58 @@ impl App {
         }
     }
 
+    pub fn update_scope_data(&mut self) {
+        if self.scope_paused {
+            return;
+        }
+        self.scope_tick += 1;
+
+        let all_text: String = self.session.messages
+            .iter()
+            .map(|m| m.content.clone())
+            .collect::<Vec<_>>()
+            .join("");
+
+        let input_text: String = self.textarea.lines().join("");
+        let combined = format!("{}{}", all_text, input_text);
+
+        let samples = self.graph_config.samples as usize;
+        let tick = self.scope_tick;
+
+        if combined.is_empty() {
+            let phase = tick as f64 * 0.1;
+            let ch0: Vec<f64> = (0..samples)
+                .map(|i| (i as f64 * 0.05 + phase).sin() * 0.3)
+                .collect();
+            let ch1: Vec<f64> = (0..samples)
+                .map(|i| (i as f64 * 0.03 + phase * 1.3).sin() * 0.2)
+                .collect();
+            self.scope_data = vec![ch0, ch1];
+            return;
+        }
+
+        let bytes = combined.as_bytes();
+        let ch0: Vec<f64> = (0..samples)
+            .map(|i| {
+                let byte_idx = (i + tick as usize) % bytes.len();
+                let raw = bytes[byte_idx] as f64 / 128.0 - 1.0;
+                let noise = (i as f64 * 0.1 + tick as f64 * 0.07).sin() * 0.05;
+                raw + noise
+            })
+            .collect();
+
+        let ch1: Vec<f64> = (0..samples)
+            .map(|i| {
+                let byte_idx = (i + tick as usize + bytes.len() / 2) % bytes.len();
+                let raw = bytes[byte_idx] as f64 / 128.0 - 1.0;
+                let noise = (i as f64 * 0.08 + tick as f64 * 0.05).cos() * 0.05;
+                raw + noise
+            })
+            .collect();
+
+        self.scope_data = vec![ch0, ch1];
+    }
+
     // 执行预设的业务，切换app状态
     pub async fn apply_action(&mut self, action: Action) {
         match action {
@@ -132,6 +241,7 @@ impl App {
                 match self.focus {
                     Focus::Input => self.focus = Focus::SessionList,
                     Focus::SessionList => self.focus = Focus::Input,
+                    Focus::Scope => self.focus = Focus::Input
                 }
             },
             Action::SendMessage => {

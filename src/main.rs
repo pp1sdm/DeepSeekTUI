@@ -5,6 +5,9 @@ mod session;
 mod llm;
 mod agent;
 mod debug;
+mod music;
+mod display;
+mod input;
 
 use crossterm::event::{self, Event, KeyEventKind};
 use std::time::Duration;
@@ -39,8 +42,6 @@ where
         // 绘制ui帧
         terminal.draw(|frame| ui::draw(frame, app))?;
 
-
-
         // 处理按键 - 阻塞线程，等待按键输入的同时还是动画帧绘制
         if event::poll(Duration::from_millis(50))? {
             if let Event::Key(key) = event::read()? {
@@ -54,6 +55,9 @@ where
 
         // 每轮都尝试拉取流数据
         app.poll_stream().await;
+
+        // 每轮更新示波器数据
+        app.update_scope_data();
     }
 
     Ok(())

@@ -51,7 +51,6 @@ impl Session {
     }
 
     // 收尾，补充完整的message信息的时间戳
-
     pub fn finish(&mut self) {
         self.updated_at = now();
     }
