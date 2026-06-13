@@ -22,3 +22,6 @@ Thumbs.db
 #agent产出文件
 .codeartsdoer/
 .arts/
+
+#模型文件
+docker/data

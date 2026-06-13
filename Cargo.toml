@@ -23,4 +23,5 @@ rustfft = "6.3"
 derive_more = { version = "2.0", features = ["display", "from"] }
 thiserror = "2.0"
 unicode-width = "0.2.2"
+sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "sqlite"] }
 

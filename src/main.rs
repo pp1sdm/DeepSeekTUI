@@ -5,17 +5,24 @@ mod session;
 mod llm;
 mod agent;
 mod debug;
-mod music;
 mod display;
 mod input;
+mod data;
 
 use crossterm::event::{self, Event, KeyEventKind};
 use std::time::Duration;
+use sqlx::sqlite::SqlitePool;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // debug部分
     let _log_guard = debug::init_log();
+
+    // 链接数据库
+    let db_url = "sqlite:data/memory.db";
+    let pool = SqlitePool::connect(db_url).await?;
+    // 初始化建表，拿到数据库实例
+    let memory_db = data::MemoryDB::new(pool).await?;
 
     // 创建终端
     let mut terminal = ratatui::init();

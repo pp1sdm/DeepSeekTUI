@@ -1,0 +1,26 @@
+services:
+#  模型服务
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama-server
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+#       绑定挂载，将模型给到指定位置
+      - ./data/ollama:/root/.ollama
+
+
+#  拉取bge-m3模型服务
+  ollama-model-puller:
+    image: curlimages/curl:latest
+    container_name: ollama-model-puller
+    depends_on:
+      - ollama
+    entrypoint: >
+      sh -c "
+      until curl -s -f http://ollama:11434/api/tags > /dev/null; do
+        sleep 2;
+      done;
+      curl -X POST http://ollama:11434/api/pull -d '{\"name\": \"bge-m3\"}';
+      "
